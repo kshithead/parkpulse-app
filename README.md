@@ -104,9 +104,20 @@ src/
 
 See `.env.example`. Everything has a default; common ones: `PORT`, `SEED_MODE` (`demo`/`clean`), `DB_FILE`.
 
+## Deploying to Vercel
+
+Vercel runs the API as serverless functions: every instance has its own memory and disk, so the app **needs a shared database** or logins and check-ins will not be consistent. ParkPulse supports **Upstash Redis** (free tier) out of the box:
+
+1. In the Vercel dashboard open your project → **Storage** (or **Marketplace**) → add **Upstash Redis** → *Create* and connect it to the project (all environments). This adds the environment variables `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) automatically.
+2. **Redeploy** (Deployments → ⋯ → Redeploy) so the functions pick the variables up.
+3. Check `https://<your-app>.vercel.app/api/v1/health` – it must show `"storage":"redis"`. (`"ephemeral"` means Redis is not connected yet; the login page also shows a warning in that case.)
+4. The first request seeds the demo dataset. Use *Operations Center → Reset data* to reload or clear it. Optional env var: `SEED_MODE=clean` to start empty.
+
+How it works: each API request loads the latest database from Redis, writes take a short cross-instance lock and are saved **before** the response is returned, and evidence photos are stored in Redis too (max ~650 KB each – the app compresses photos automatically). Serverless functions cannot keep a push connection open, so on Vercel live updates use fast polling (every 3 s while the tab is visible) instead of Server-Sent Events; the sidebar shows **LIVE · 3S**. Locally (`npm run dev` / `npm run demo`) everything uses a JSON file and instant SSE as before.
+
 ## Notes & limits
 
 - **Camera access needs HTTPS or `localhost`.** On a phone over plain `http://192.168.x.x` the camera is blocked by the browser – use manual bay-code entry, an HTTPS tunnel, or open placard links with the phone's camera app.
 - Map tiles load from OpenStreetMap (needs internet); markers and distances work offline.
 - Storage is a single-process JSON file – ideal for a campus pilot/demo. For multi-server deployment, swap `server/store.js` for PostgreSQL/MongoDB.
-- Vercel (`api/index.js`) runs the same API on an ephemeral filesystem – data resets between cold starts, so use a persistent Node host for real use.
+- On Vercel the API needs a shared database – see **Deploying to Vercel** below.

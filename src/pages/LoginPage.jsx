@@ -18,12 +18,19 @@ export const LoginPage = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [demo, setDemo] = useState(null);
+  const [storage, setStorage] = useState(null);
 
   const { login } = useAuth();
 
   // Offer one-click demo credentials only when the server is running the demo dataset.
   useEffect(() => {
-    api.health().then((h) => h.demoMode && setDemo(h.demoAccounts)).catch(() => {});
+    api
+      .health()
+      .then((h) => {
+        setStorage(h.storage);
+        if (h.demoMode) setDemo(h.demoAccounts);
+      })
+      .catch(() => {});
   }, []);
 
   const switchPortal = (next) => {
@@ -82,6 +89,12 @@ export const LoginPage = () => {
             <h1 className="text-lg font-bold text-white">{isAdminPortal ? 'Security & Operations Sign-In' : 'Welcome back'}</h1>
             <p className="text-xs text-slate-400 mt-1">{isAdminPortal ? 'Access the parking control & enforcement console' : 'Sign in to check in, view free bays and track your sessions'}</p>
           </div>
+
+          {storage === 'ephemeral' && (
+            <div role="status" className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+              This server has no shared database configured, so sign-ins may drop between requests. The administrator needs to connect Redis (see README).
+            </div>
+          )}
 
           {error && (
             <div role="alert" className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium">

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Store } from './store.js';
+import { Mutex } from './redisStore.js';
 import { buildInitialData, DEMO_ACCOUNTS } from './seed.js';
 import { hashPassword, verifyPassword, newToken, digest, newId } from './security.js';
 import {
@@ -35,12 +36,14 @@ const STATUS_LABEL = {
   dismissed: 'Dismissed'
 };
 
-export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo' }) {
-  const store = new Store(dbFile);
+// `store` may be injected (RedisStore on serverless hosts); otherwise a local JSON file is used.
+export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo', store: injected }) {
+  const store = injected || new Store(dbFile);
+  const remote = Boolean(store.remote);
   let db = await store.load(() => buildInitialData({ mode: seedMode }));
   db.meta.rev ??= 1;
 
-  fs.mkdirSync(uploadsDir, { recursive: true });
+  if (!remote) fs.mkdirSync(uploadsDir, { recursive: true });
 
   const app = express();
   app.disable('x-powered-by');
@@ -49,7 +52,18 @@ export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo'
   // Evidence uploads carry base64 images; everything else is tiny JSON.
   app.use('/api/v1/uploads', express.json({ limit: '6mb' }));
   app.use(express.json({ limit: '100kb' }));
-  app.use('/uploads', express.static(uploadsDir, { maxAge: '7d', immutable: true }));
+  if (remote) {
+    // Photos live in Redis (serverless /tmp is per-instance), so serve them from there.
+    app.get('/uploads/:name', async (req, res) => {
+      const m = /^([a-f0-9]{16,}).(jpg|png|webp)$/.exec(req.params.name);
+      const buf = m && (await store.getBlob(req.params.name).catch(() => null));
+      if (!buf) return res.status(404).end();
+      res.set({ 'Content-Type': { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[m[2]], 'Cache-Control': 'public, max-age=604800, immutable' });
+      res.end(buf);
+    });
+  } else {
+    app.use('/uploads', express.static(uploadsDir, { maxAge: '7d', immutable: true }));
+  }
 
   // -------------------------------------------------------------------------
   // helpers
@@ -65,6 +79,11 @@ export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo'
 
   /** Persist + notify all connected clients that state changed. */
   function commit() {
+    // Keep the document bounded: drop the oldest finished sessions beyond 3000.
+    if (db.sessions.length > 3000) {
+      const keep = db.sessions.filter((s) => s.status === 'active');
+      db.sessions = [...keep, ...db.sessions.filter((s) => s.status !== 'active').slice(0, 3000 - keep.length)];
+    }
     db.meta.rev += 1;
     store.save();
     broadcast();
@@ -258,6 +277,9 @@ export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo'
       uptimeSec: Math.round(process.uptime()),
       timestamp: nowIso(),
       demoMode: db.meta.seedMode === 'demo',
+      // redis = shared cloud database; file = local disk; ephemeral = serverless without a shared DB (sessions will not be reliable)
+      storage: remote ? 'redis' : process.env.VERCEL ? 'ephemeral' : 'file',
+      realtime: remote ? 'polling' : 'sse',
       // Only advertised for demo datasets so the login screen can offer one-click demo access.
       demoAccounts: db.meta.seedMode === 'demo' ? DEMO_ACCOUNTS : undefined,
       rev: db.meta.rev
@@ -361,6 +383,8 @@ export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo'
   // client first exchanges its bearer token for a short-lived one-time ticket.
   // -------------------------------------------------------------------------
   api.post('/events/ticket', requireAuth, (req, res) => {
+    // Serverless functions cannot hold a connection open: tell the client to poll instead.
+    if (remote) throw new HttpError(501, 'Realtime push is not available on this deployment; using fast polling.');
     const ticket = crypto.randomBytes(16).toString('hex');
     tickets.set(ticket, Date.now() + 30 * 1000);
     for (const [k, exp] of tickets) if (exp < Date.now()) tickets.delete(k);
@@ -713,12 +737,12 @@ export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo'
   // -------------------------------------------------------------------------
   // evidence uploads
   // -------------------------------------------------------------------------
-  api.post('/uploads', requireAuth, (req, res) => {
+  api.post('/uploads', requireAuth, async (req, res) => {
     const dataUrl = String(req.body?.dataUrl || '');
     const m = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
     if (!m) throw badRequest('Upload a JPEG, PNG or WebP image.');
     const buf = Buffer.from(m[2], 'base64');
-    if (buf.length > 4 * 1024 * 1024) throw new HttpError(413, 'Image is too large (max 4 MB).');
+    if (buf.length > (remote ? 650 * 1024 : 4 * 1024 * 1024)) throw new HttpError(413, remote ? 'Image is too large (max 650 KB on the cloud deployment). Try a smaller photo.' : 'Image is too large (max 4 MB).');
     const magic = {
       jpeg: buf[0] === 0xff && buf[1] === 0xd8,
       png: buf.subarray(0, 4).toString('hex') === '89504e47',
@@ -727,7 +751,8 @@ export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo'
     if (!magic[m[1]]) throw badRequest('File content does not match its image type.');
     const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
     const name = `${crypto.randomBytes(12).toString('hex')}.${ext}`;
-    fs.writeFileSync(path.join(uploadsDir, name), buf);
+    if (remote) await store.putBlob(name, m[2]);
+    else fs.writeFileSync(path.join(uploadsDir, name), buf);
     res.status(201).json({ url: `/uploads/${name}` });
   });
 
@@ -839,6 +864,52 @@ export async function createApp({ dbFile, uploadsDir, distDir, seedMode = 'demo'
   });
 
   api.use((req, res) => res.status(404).json({ error: `No such endpoint: ${req.method} ${req.originalUrl}` }));
+
+  // -------------------------------------------------------------------------
+  // Serverless / shared-database mode. Each request: queue on this instance, load the latest data
+  // from Redis, and (for writes) hold a cross-instance lock and persist BEFORE the response is sent.
+  // -------------------------------------------------------------------------
+  if (remote) {
+    const mutex = new Mutex();
+    app.use('/api/v1', async (req, res, next) => {
+      const releaseLocal = await mutex.acquire();
+      res.on('close', releaseLocal);
+      let lockToken = null;
+      try {
+        // Uploads only write a blob, so they don't need the database lock.
+        const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.path !== '/uploads';
+        if (mutating) lockToken = await store.lock();
+        await store.refresh();
+        db = store.data;
+        if (mutating) {
+          const origEnd = res.end.bind(res);
+          let done = false;
+          res.end = (...args) => {
+            if (done) return res;
+            done = true;
+            (async () => {
+              try {
+                await store.persist();
+              } catch (err) {
+                console.error('[redis] persist failed:', err.message);
+                store.invalidate();
+                res.statusCode = 503;
+                args = [JSON.stringify({ error: 'Could not save your change. Please try again.' })];
+              } finally {
+                await store.unlock(lockToken);
+              }
+              origEnd(...args);
+            })();
+            return res;
+          };
+        }
+        next();
+      } catch (err) {
+        if (lockToken) await store.unlock(lockToken);
+        next(err instanceof HttpError ? err : new HttpError(503, 'The data service is temporarily unavailable. Please try again.'));
+      }
+    });
+  }
 
   app.use('/api/v1', api);
   app.get('/', (req, res, next) => (fs.existsSync(path.join(distDir, 'index.html')) ? next() : res.json({ service: 'ParkPulse API', status: 'ONLINE', docs: '/api/v1/health' })));

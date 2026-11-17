@@ -25,6 +25,7 @@ export const ParkingProvider = ({ children }) => {
   const [loadError, setLoadError] = useState('');
   const [connection, setConnection] = useState({ status: 'connecting', latencyMs: null, lastSync: null });
   const revRef = useRef(0);
+  const pollingRef = useRef(false); // true when the server cannot push (serverless hosting)
 
   // GPS (kept for the session only; never persisted)
   const [userLocation, setUserLocation] = useState(() => {
@@ -51,7 +52,7 @@ export const ParkingProvider = ({ children }) => {
       setLoadError('');
       setConnection((c) => ({
         ...c,
-        status: c.status === 'offline' ? 'reconnecting' : c.status,
+        status: c.status === 'offline' || c.status === 'reconnecting' ? (pollingRef.current ? 'polling' : 'reconnecting') : c.status,
         latencyMs: Math.round(performance.now() - t0),
         lastSync: Date.now()
       }));
@@ -75,6 +76,8 @@ export const ParkingProvider = ({ children }) => {
     let source = null;
     let retryTimer = null;
     let refreshTimer = null;
+    let fastPoll = null;
+    pollingRef.current = false;
 
     setLoading(true);
     refresh().finally(() => !closed && setLoading(false));
@@ -103,6 +106,13 @@ export const ParkingProvider = ({ children }) => {
         };
       } catch (err) {
         if (closed || err.status === 401) return;
+        if (err.status === 501) {
+          // Serverless host: no push channel. Poll quickly instead (only while the tab is visible).
+          pollingRef.current = true;
+          setConnection((c) => ({ ...c, status: 'polling' }));
+          fastPoll = setInterval(() => document.visibilityState === 'visible' && refresh(), 3000);
+          return;
+        }
         setConnection((c) => ({ ...c, status: 'reconnecting' }));
         retryTimer = setTimeout(connect, 5000);
       }
@@ -121,6 +131,7 @@ export const ParkingProvider = ({ children }) => {
       clearTimeout(retryTimer);
       clearTimeout(refreshTimer);
       clearInterval(poll);
+      clearInterval(fastPoll);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('online', refresh);
     };

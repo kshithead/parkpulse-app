@@ -9,6 +9,7 @@ import { timeAgo } from '../../utils/format';
 
 const CONNECTION = {
   live: { label: 'LIVE', dot: 'bg-emerald-400', text: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+  polling: { label: 'LIVE · 3s', dot: 'bg-emerald-400', text: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
   connecting: { label: 'CONNECTING', dot: 'bg-amber-400', text: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
   reconnecting: { label: 'RECONNECTING', dot: 'bg-amber-400', text: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
   offline: { label: 'OFFLINE', dot: 'bg-rose-500', text: 'text-rose-400 bg-rose-500/10 border-rose-500/20' }
@@ -110,7 +111,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
                 Cloud Sync
               </span>
               <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 ${conn.text}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${conn.dot} ${connection.status === 'live' ? 'animate-pulse' : ''}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${conn.dot} ${connection.status === 'live' || connection.status === 'polling' ? 'animate-pulse' : ''}`} />
                 {conn.label}
               </span>
             </div>
