@@ -1,115 +1,112 @@
-# ParkPulse 🚗⚡
-### Cloud-Based Smart Parking Availability & Violation Reporting System
-*A modern, responsive, pure software & QR-driven smart parking prototype designed for college minor projects.*
+# ParkPulse – Cloud-Based Smart Parking & Violation Reporting
 
----
+A campus parking platform with **QR check-in/out, live availability, a real-time officer console and community violation reporting**. React + Vite frontend, Node/Express backend with a persistent database, live updates over Server-Sent Events.
 
-## 📌 Project Overview
-**ParkPulse** is a software-driven smart parking management and community enforcement platform. 
+No payments, no fines, no IoT sensors – bays are claimed by scanning a QR placard, and enforcement is by warnings and towing.
 
-Instead of relying on costly physical sensors or payment gateways, ParkPulse adopts a clean **Campus QR Check-In & Enforcement Architecture**:
-1. **Printed QR Placards**: Each campus parking bay features a unique QR code placard (`P001`, `P002`, etc.).
-2. **Instant Check-In**: Drivers scan the QR code with their mobile device or enter the bay code to begin their parking session, immediately marking the slot as **Occupied** in the central cloud database.
-3. **Check-Out & Bay Release**: When departing, drivers tap "End Parking", which tracks their session duration and immediately releases the bay back to **Available** for other campus drivers.
-4. **Community Violation Reporting**: Drivers and security guards report unauthorized, double-parked, or blocked vehicles with photo evidence and license plate tracking for rapid security notice dispatch and towing.
+## Quick start
 
-**No physical IoT sensors, payment gateways, or monetary fines are required.**
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technologies Used |
-|---|---|
-| **Framework** | [React 19](https://react.dev/) + [Vite](https://vitejs.dev/) |
-| **Language** | JavaScript (ESNext) |
-| **Styling** | [Tailwind CSS v3](https://tailwindcss.com/) |
-| **Icons** | [Lucide React](https://lucide.dev/) |
-| **Routing** | [React Router v7](https://reactrouter.com/) |
-| **State & Persistence** | React Context API + LocalStorage Synchronization |
-| **Architecture** | Service-oriented abstraction layer (`src/services/api.js`) |
-
----
-
-## 🌟 Key Features & Pages
-
-### 1. 🌐 Landing Page (`/`)
-- Commercial SaaS homepage aesthetic with dark styling and clean typography.
-- Explains the pure QR software model for campus parking.
-- Real-time stats ticker displaying available bays, occupancy percentage, and active reports.
-- Interactive live slot preview card showcasing real-time bay availability.
-
-### 2. 🔐 Authentication (`/login` & `/register`)
-- Dual persona support: **Student / Driver** vs. **Campus Admin / Security Officer**.
-- **1-Click Instant Demo Login Buttons**:
-  - *Driver Demo (Alex Mercer)*
-  - *Admin Demo (Officer Dave Matthews)*
-- Registration form with vehicle make/model and **live Indian license plate badge preview (`[IND] KA-05-EV-2026`)**.
-- Local state authentication with `localStorage` persistence.
-
-### 3. 📊 User Dashboard (`/dashboard`)
-- KPI Stat Cards: Total Slots, Available Slots (Green), Occupied Slots (Red), and Active Sessions.
-- **Active Parking Session Card**: Real-time ticking elapsed timer, slot information, and instant checkout/release trigger.
-- **Campus Floor & Slot Visualizer**: Interactive slot grid filtered by zone (Zone A, B, C, D) and bay status (Available, Occupied, EV Charging). Clicking any available slot lets drivers park immediately.
-- Recent parking activity timeline (past sessions and reported violations).
-
-### 4. 📱 QR Parking & Metering (`/qr-parking`)
-- **Camera QR Scanner Viewfinder**: Animated laser scan bar, corner brackets, and simulated camera optical detection.
-- **Manual QR Code Entry**: Demonstration presets for instant testing (`P001`, `P002`, `P003`, `P004`, `P007`, `P013`).
-- **Slot Information Inspection Card**:
-  - Bay code, zone, floor level, bay type (Standard, EV, Accessible).
-- **Start Parking**: Drivers enter or confirm their vehicle number; slot dynamically turns Occupied across the entire app!
-- **End Parking**: Generates an itemized summary modal with elapsed duration. Marks the slot back to Available immediately.
-
-### 5. 📍 Nearby Parking & Geospatial Map (`/nearby`)
-- **Interactive Smart Campus Radar Map**: Visually appealing SVG map with interactive pins for 5 strategic parking zones, hover tooltips, and layer filters (All, &ge;3 Free Slots, EV Ready).
-- **Parking Facility Cards**: Displays zone, address, distance (km), walking/driving minutes, available vs. total bays.
-- **Simulated Turn-by-Turn Route Preview**: Step-by-step campus driving route modal with security checkpoint guidance.
-
-### 6. 🚨 Violation Reporting (`/report-violation`)
-- Categories:
-  - *Unauthorized Parking* (no permit / permit expired)
-  - *Wrong Parking* (straddling lines, double parking)
-  - *Blocked Parking* (blocking driveway or emergency fire hydrant)
-  - *Expired Meter*
-  - *Reserved / Accessible Space Infringement*
-- Offending vehicle plate input with live formatted license plate badge.
-- Campus zone and specific bay selector.
-- Photo evidence upload with drag-and-drop, file picker, and 3 quick demo preset violation photos.
-- **Live Sync with Admin**: Submitted reports generate unique Case IDs (e.g. `VIO-2026-894`) and appear instantly on the Admin Dashboard!
-
-### 7. 🛡️ Admin Operations Console (`/admin`)
-- **Overview Statistics**: Facility capacity, live occupancy percentage bar, active parking sessions, and pending violations alert count.
-- **Slot Management**: Zone filter, status filter, manual override controls (toggle slot Available &harr; Occupied &harr; Maintenance), and an **Add New Slot** modal.
-- **Session Management**: Live table of all currently parked vehicles, start times, driver names, and "Release Bay" capability.
-- **Violation Reports Management**: Adjudicate reports with status updates:
-  - *Verify Incident* (moves to Investigating)
-  - *Issue Warning Notice* (issues formal notice to vehicle)
-  - *Mark as Resolved*
-  - *Dismiss*
-- **System Audit Logs**: Real-time event log feed tracking all check-ins, check-outs, and security overrides.
-
----
-
-## 🚀 Installation & Execution
-
-### 1. Run Development Server
 ```bash
-npm run dev
+npm install
+npm run dev          # API on :5000 + web app on :5173 (opens with demo data)
 ```
 
-Open your browser at:
-```
-http://localhost:5173
-```
+Open **http://localhost:5173**.
 
-### 2. Build for Production (Optional)
+| Role | Email | Password |
+|------|-------|----------|
+| Driver | `driver@parkpulse.edu` | `Driver@123` |
+| Security officer | `admin@parkpulse.edu` | `Admin@123` |
+
+On the login page, the **"Fill demo credentials"** button fills these in (only shown while the server runs the demo dataset).
+
+### Single-process / presentation mode
+
 ```bash
-npm run build
-npm run preview
+npm run demo         # builds the app, then serves UI + API together on http://localhost:5000
 ```
 
----
+### Before you present
 
-## 📄 License
-Developed for academic minor project evaluation.
+The demo dataset is generated *relative to the moment it is created* (active sessions started "40 min ago", a week of history, …). If the database is more than a day old, refresh it:
+
+```bash
+npm run seed:demo    # or in the app: Operations Center → Reset data → Reload demo dataset
+npm run seed:clean   # empty campus: bays + officer account only
+```
+
+## Guided tour for new users
+
+First-time users get an interactive walkthrough automatically after signing in: a spotlight highlights the real interface (stats, live bay board, scanner, map, report form — or the officer KPIs, tabs and placards), moves between pages and opens the mobile menu when needed. Drivers and officers get different tours. It never interrupts a QR-placard deep link.
+
+- Replay any time with the **?** button in the top bar.
+- Keyboard: ← / → to move, **Esc** to close.
+- Completion is remembered per user in the browser (`parkpulse_tour_v1_<userId>` in localStorage). Clear it to see the tour again on first login.
+- Steps live in `src/tour/steps.js`; targets are `data-tour="…"` attributes in the UI.
+
+## Suggested demo script (≈5 minutes)
+
+1. Open two browser windows side by side: **driver** (left) and **officer** (right, `/login?portal=admin`).
+2. Driver → **Dashboard**: live bay grid, usage stats. Tap a green bay → **Start parking**. The timer starts.
+3. Officer console updates **instantly, without refresh** (active sessions, occupancy, live feed).
+4. Officer → **QR Placards**: show the real printable QR for a bay. Driver → **Scan & Park** → camera scans it (or open the link from a phone).
+5. Driver → **Report Violation**: pick a category, enter a plate, attach a photo, submit.
+6. Officer → **Violations**: *Verify on site* → *Issue notice*. The reporter (and the vehicle's owner, if registered) get notifications in the bell.
+7. Officer → **Overview**: occupancy by hour, check-ins per day, zone utilisation, case response time. **Audit trail** shows every action. **Sessions** → export CSV.
+8. Driver → **End parking**: receipt with real duration; the bay is free for everyone again.
+
+## Responsive design
+
+Layouts are tested at 360 px (phones), 768 px (tablets) and 1280 px+ (desktop): a slide-in menu on small screens, a fixed sidebar from 1024 px, 2-column stat grids on phones, card views instead of wide tables, 40 px+ touch targets on touch devices, 16 px inputs (no iOS zoom) and safe-area padding for notches.
+
+## What's real
+
+- **Single source of truth** – the Express API owns all state (`server/data/db.json`, written atomically). Two devices always see the same thing.
+- **Authentication** – scrypt-hashed passwords, opaque bearer tokens (stored hashed, 7-day expiry), role-based access (driver / officer), login throttling.
+- **Rules enforced server-side** – a bay can't be double-booked, a driver/vehicle can't have two active sessions, officers can't be checked in, violations follow a state machine (`pending → investigating → warning_issued → resolved/dismissed`), duplicate reports are detected, plates are validated and normalised (`KA-03-HA-8820`).
+- **Real QR** – bay placards are generated as QR codes encoding `/qr-parking?code=P007`; the in-app scanner decodes them from the camera (jsQR). Scanning with a phone's own camera app also works (deep links survive the login redirect).
+- **Real map** – Leaflet/OpenStreetMap with live per-zone availability, driver GPS position, haversine distances and walking/driving time estimates.
+- **Evidence photos** – compressed in the browser, validated and stored by the server (`server/data/uploads`).
+- **Live updates** – Server-Sent Events push a change signal; clients refetch. A 20 s poll and focus-refetch are the safety net. The sidebar shows real connection state and measured latency.
+- **Analytics** – computed from actual session and violation records.
+- **Privacy** – drivers never see other drivers' names or plates; reporters see only their own reports.
+
+## Project structure
+
+```
+server/
+  server.js      entry (listens, serves built UI in production)
+  app.js         all REST routes, auth, validation, SSE, analytics
+  store.js       atomic JSON-file persistence
+  seed.js        campus layout + demo dataset generator (CLI: npm run seed:demo)
+  security.js    password hashing / tokens      validators.js   input rules
+src/
+  context/       Auth, Parking (live state + SSE), Toast
+  services/api.js    typed-ish API client (no mock fallback)
+  pages/         Landing, Login, Register, Dashboard, QR, Map, Violations, Admin, Placards
+  components/    common/ parking/ violations/ admin/
+```
+
+## API overview (`/api/v1`)
+
+| Area | Endpoints |
+|------|-----------|
+| Public | `GET /health`, `GET /public/overview` |
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET/PATCH /auth/me` |
+| State | `GET /state` (role-aware snapshot), `GET /slots/qr/:code` |
+| Sessions | `POST /sessions/start`, `POST /sessions/end` |
+| Violations | `POST /violations`, `PATCH /violations/:id/status` *(officer)*, `POST /uploads` |
+| Infrastructure *(officer)* | `POST/PATCH/DELETE /slots`, `POST/PATCH /zones` |
+| Officer | `GET /admin/analytics`, `GET /admin/logs`, `POST /admin/reset` |
+| Realtime | `POST /events/ticket` → `GET /events?ticket=` (SSE) |
+
+## Configuration
+
+See `.env.example`. Everything has a default; common ones: `PORT`, `SEED_MODE` (`demo`/`clean`), `DB_FILE`.
+
+## Notes & limits
+
+- **Camera access needs HTTPS or `localhost`.** On a phone over plain `http://192.168.x.x` the camera is blocked by the browser – use manual bay-code entry, an HTTPS tunnel, or open placard links with the phone's camera app.
+- Map tiles load from OpenStreetMap (needs internet); markers and distances work offline.
+- Storage is a single-process JSON file – ideal for a campus pilot/demo. For multi-server deployment, swap `server/store.js` for PostgreSQL/MongoDB.
+- Vercel (`api/index.js`) runs the same API on an ephemeral filesystem – data resets between cold starts, so use a persistent Node host for real use.

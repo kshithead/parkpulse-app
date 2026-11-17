@@ -1,52 +1,46 @@
 import React from 'react';
 
-export const Badge = ({ variant = 'default', children, size = 'sm', className = '' }) => {
-  const sizeClasses = {
-    xs: 'px-2 py-0.5 text-xs',
-    sm: 'px-2.5 py-1 text-xs',
-    md: 'px-3 py-1.5 text-sm font-medium',
-  };
+const SIZES = {
+  xs: 'px-2 py-0.5 text-[11px]',
+  sm: 'px-2.5 py-1 text-xs',
+  md: 'px-3 py-1.5 text-sm'
+};
 
-  const variantClasses = {
-    available: 'bg-emerald-50 text-emerald-700 border border-emerald-200 ring-1 ring-emerald-600/10',
-    occupied: 'bg-rose-50 text-rose-700 border border-rose-200 ring-1 ring-rose-600/10',
-    reserved: 'bg-purple-50 text-purple-700 border border-purple-200 ring-1 ring-purple-600/10',
-    maintenance: 'bg-amber-50 text-amber-700 border border-amber-200 ring-1 ring-amber-600/10',
-    
-    // Violation statuses
-    pending: 'bg-amber-50 text-amber-700 border border-amber-200 ring-1 ring-amber-600/10',
-    investigating: 'bg-blue-50 text-blue-700 border border-blue-200 ring-1 ring-blue-600/10',
-    warning_issued: 'bg-rose-50 text-rose-700 border border-rose-200 ring-1 ring-rose-600/10',
-    fine_issued: 'bg-rose-50 text-rose-700 border border-rose-200 ring-1 ring-rose-600/10',
-    resolved: 'bg-emerald-50 text-emerald-700 border border-emerald-200 ring-1 ring-emerald-600/10',
-    dismissed: 'bg-slate-100 text-slate-700 border border-slate-200',
+// tone -> [pill classes, dot color]
+const TONES = {
+  green: ['bg-emerald-50 text-emerald-700 border-emerald-200', 'bg-emerald-500'],
+  red: ['bg-rose-50 text-rose-700 border-rose-200', 'bg-rose-500'],
+  amber: ['bg-amber-50 text-amber-700 border-amber-200', 'bg-amber-500'],
+  blue: ['bg-blue-50 text-blue-700 border-blue-200', 'bg-blue-500'],
+  purple: ['bg-purple-50 text-purple-700 border-purple-200', 'bg-purple-500'],
+  indigo: ['bg-indigo-50 text-indigo-700 border-indigo-200', 'bg-indigo-500'],
+  slate: ['bg-slate-100 text-slate-700 border-slate-200', 'bg-slate-400']
+};
 
-    // Role / System badges
-    user: 'bg-slate-100 text-slate-700 border border-slate-200',
-    admin: 'bg-indigo-50 text-indigo-700 border border-indigo-200 ring-1 ring-indigo-600/10',
-    primary: 'bg-blue-50 text-blue-700 border border-blue-200 ring-1 ring-blue-600/10',
-    default: 'bg-slate-100 text-slate-700 border border-slate-200',
-  };
+const VARIANT_TONE = {
+  available: 'green',
+  success: 'green',
+  resolved: 'green',
+  occupied: 'red',
+  danger: 'red',
+  warning_issued: 'red',
+  reserved: 'purple',
+  maintenance: 'amber',
+  warning: 'amber',
+  pending: 'amber',
+  investigating: 'blue',
+  primary: 'blue',
+  admin: 'indigo',
+  dismissed: 'slate',
+  user: 'slate',
+  default: 'slate'
+};
 
+export const Badge = ({ variant = 'default', tone, children, size = 'sm', dot = true, className = '' }) => {
+  const [pill, dotColor] = TONES[tone || VARIANT_TONE[variant] || 'slate'];
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 font-medium rounded-full ${
-        sizeClasses[size] || sizeClasses.sm
-      } ${variantClasses[variant] || variantClasses.default} ${className}`}
-    >
-      <span
-        className={`w-1.5 h-1.5 rounded-full ${
-          variant === 'available' || variant === 'resolved'
-            ? 'bg-emerald-500 animate-pulse'
-            : variant === 'occupied' || variant === 'warning_issued' || variant === 'fine_issued'
-            ? 'bg-rose-500'
-            : variant === 'pending' || variant === 'maintenance'
-            ? 'bg-amber-500'
-            : variant === 'investigating' || variant === 'admin'
-            ? 'bg-indigo-500'
-            : 'bg-slate-400'
-        }`}
-      />
+    <span className={`inline-flex items-center gap-1.5 font-semibold rounded-full border whitespace-nowrap ${SIZES[size] || SIZES.sm} ${pill} ${className}`}>
+      {dot && <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />}
       {children}
     </span>
   );

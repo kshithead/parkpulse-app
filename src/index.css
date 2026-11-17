@@ -3,39 +3,105 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-slate-50 text-slate-800 antialiased selection:bg-emerald-500 selection:text-white font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+  :focus-visible {
+    @apply outline-none ring-2 ring-emerald-500/60 ring-offset-1;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    @apply ring-0 ring-offset-0;
+  }
 }
 
-/* Custom animated pulse indicator */
-.pulse-indicator {
-  position: relative;
-}
-.pulse-indicator::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border-radius: 9999px;
-  animation: pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+/* ---- Touch ergonomics ---------------------------------------------------
+   On touch devices every interactive control gets a >= 40px hit area
+   (WCAG 2.5.8 recommends 24px minimum, Apple/Google recommend 44/48px).
+   Opt out with .no-tt for controls that sit inside a larger tap area. */
+@media (pointer: coarse) {
+  button:not(.no-tt),
+  [role="tab"],
+  select {
+    min-height: 40px;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+    min-height: 44px;
+    font-size: 16px; /* prevents iOS Safari from zooming into focused fields */
+  }
+  textarea { font-size: 16px; }
+  .leaflet-container button,
+  .leaflet-bar a { min-height: 0; }
 }
 
-/* Custom sleek scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Respect device notches / home indicators */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 }
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
+
+/* ---- Motion ------------------------------------------------------------ */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
 }
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+@keyframes modal-enter {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes dropdown-enter {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes tour-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.tour-pop       { animation: tour-pop 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.page-enter     { animation: page-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.backdrop-enter { animation: fade-in 0.18s ease-out both; }
+.modal-enter    { animation: modal-enter 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.dropdown-enter { animation: dropdown-enter 0.14s ease-out both; transform-origin: top right; }
+.toast-enter    { animation: toast-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Scrollbars -------------------------------------------------------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* ---- Leaflet tweaks ---------------------------------------------------- */
+.leaflet-container { font-family: inherit; background: #e2e8f0; }
+.pp-marker { background: transparent; border: 0; }
+
+/* ---- Print (QR placards) ---------------------------------------------- */
+@media print {
+  @page { margin: 10mm; }
+  body { background: #fff !important; }
+  .print-sheet { gap: 8mm !important; }
+  .print-card { break-inside: avoid; box-shadow: none !important; }
 }

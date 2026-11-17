@@ -54,17 +54,20 @@ export const StatCard = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl p-5 border shadow-sm transition-all duration-200 ${
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onClick()) : undefined}
+      className={`bg-white rounded-2xl p-3.5 sm:p-5 border shadow-sm min-w-0 transition-all duration-200 ${
         onClick ? 'cursor-pointer hover:shadow-md' : ''
       } ${style.border} ${style.glow} ${className}`}
     >
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 leading-tight">
             {title}
           </p>
-          <div className="flex items-baseline gap-2">
-            <h4 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 font-mono">
+          <div className="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
+            <h4 className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 font-mono">
               {value}
             </h4>
             {trend && (
@@ -78,7 +81,7 @@ export const StatCard = ({
           )}
         </div>
         {Icon && (
-          <div className={`p-3 rounded-xl flex items-center justify-center ${style.bg}`}>
+          <div className={`hidden min-[420px]:flex p-2 sm:p-3 rounded-xl items-center justify-center shrink-0 ${style.bg}`}>
             <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
         )}

@@ -1,291 +1,227 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  Car,
-  QrCode,
-  ShieldAlert,
-  MapPin,
-  CheckCircle2,
-  Zap,
-  ArrowRight,
-  Layers,
-  Clock,
-  Server,
-  Smartphone,
-  ShieldCheck
-} from 'lucide-react';
-import { useParking } from '../context/ParkingContext';
+import { QrCode, ShieldAlert, MapPin, ArrowRight, Layers, Clock, Smartphone, ShieldCheck, Bell, Camera } from 'lucide-react';
+import { Logo } from '../components/common/Feedback';
+import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import { useDocumentTitle } from '../hooks/hooks';
+
+function usePublicOverview() {
+  const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api
+        .overview()
+        .then((d) => alive && (setData(d), setFailed(false)))
+        .catch(() => alive && setFailed(true));
+    load();
+    const id = setInterval(load, 15000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+  return { data, failed };
+}
+
+const FEATURES = [
+  { icon: QrCode, tone: 'blue', title: 'Scan-to-park QR placards', text: 'Every bay carries a QR placard. Scan it with the in-app camera and the bay is yours — no tickets, no gates, no hardware sensors.' },
+  { icon: Clock, tone: 'emerald', title: 'Digital check-out', text: 'Tap End Parking when you leave. Your session length is recorded and the bay returns to the pool instantly for the next driver.' },
+  { icon: ShieldAlert, tone: 'rose', title: 'Community enforcement', text: 'Report blocked exits, double parking or misused reserved bays with a photo. Officers verify, issue notices, and you see every status change.' },
+  { icon: MapPin, tone: 'amber', title: 'Live campus map', text: 'See which zones have free bays right now, sorted by how far they are from you, with one-tap directions.' },
+  { icon: Layers, tone: 'indigo', title: 'Officer operations console', text: 'Live occupancy, usage analytics, bay overrides, session control, printable QR placards and a full audit trail.' },
+  { icon: Bell, tone: 'teal', title: 'Real-time everywhere', text: 'Changes made on one device appear on every other within a second — a driver checks in, the officer console updates.' }
+];
+
+const TONES = {
+  blue: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  rose: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+  amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  indigo: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  teal: 'bg-teal-500/10 text-teal-400 border-teal-500/20'
+};
 
 export const LandingPage = () => {
-  const { stats, slots } = useParking();
-
-  const previewSlots = slots.slice(0, 6);
+  useDocumentTitle(null);
+  const { isAuthenticated, isAdmin } = useAuth();
+  const { data, failed } = usePublicOverview();
+  const home = isAdmin ? '/admin' : '/dashboard';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-emerald-500 selection:text-white font-sans overflow-x-hidden">
-      {/* Top Navbar */}
+    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-emerald-500 selection:text-white overflow-x-hidden">
       <header className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/25 group-hover:scale-105 transition-transform">
-              <Car className="w-5 h-5 text-slate-950 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-extrabold tracking-tight text-white">
-                  Park<span className="text-emerald-400">Pulse</span>
-                </span>
-                <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-              </div>
-              <p className="text-[10px] font-mono tracking-widest text-slate-400 uppercase">
-                Campus Smart Parking
-              </p>
-            </div>
-          </Link>
-
-          <div className="flex items-center gap-3">
-            <Link
-              to="/login?portal=admin"
-              className="px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Officer Login</span>
-            </Link>
-            <Link
-              to="/login"
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center gap-1.5"
-            >
-              <span>Driver Sign In</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+          <Logo subtitle="Campus Smart Parking" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            {isAuthenticated ? (
+              <Link to={home} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center gap-1.5">
+                <span>Open {isAdmin ? 'Operations Center' : 'Dashboard'}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            ) : (
+              <>
+                <Link to="/login?portal=admin" className="px-3 py-2 text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Officer Login</span>
+                </Link>
+                <Link to="/login" className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center gap-1.5">
+                  <span>Driver Sign In</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
       <section className="relative pt-16 sm:pt-24 pb-20 px-4 sm:px-8 max-w-7xl mx-auto">
-        {/* Subtle Ambient Background Gradients */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none" />
         <div className="absolute top-1/3 right-10 w-[400px] h-[300px] bg-blue-500/10 rounded-full blur-[120px] pointer-events-none" />
 
         <div className="text-center max-w-3xl mx-auto space-y-6 relative z-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900 border border-slate-700 text-slate-300 text-xs font-mono">
             <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Digital Smart Campus Grid</span>
+            <span>Hardware-free smart parking</span>
             <span className="text-slate-600">|</span>
-            <span className="text-emerald-400 font-bold">Real-Time Availability</span>
+            <span className="text-emerald-400 font-bold">Real-time availability</span>
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white leading-[1.15]">
-            Cloud-Based <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">QR Smart Parking</span> & Violation Reporting
+            Find a bay. <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">Scan. Park.</span> Keep campus clear.
           </h1>
 
           <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            Eliminate parking hunting and enforce campus traffic order. ParkPulse pairs touchless QR check-in and dynamic cloud availability tracking with community violation reporting.
+            ParkPulse ends the circling for a free spot. Drivers check in by scanning a QR placard, everyone sees live availability, and the community reports violations straight to campus security.
           </p>
 
-          {/* Primary Action Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-            <Link
-              to="/login?portal=user"
-              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-xl shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 group"
-            >
-              <span>Driver Portal Login</span>
+            <Link to={isAuthenticated ? home : '/register'} className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-xl shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 group">
+              <span>{isAuthenticated ? 'Go to my workspace' : 'Register your vehicle'}</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </Link>
-
-            <Link
-              to="/login?portal=admin"
-              className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm border border-slate-700 transition-all flex items-center justify-center gap-2"
-            >
-              <ShieldCheck className="w-4 h-4 text-indigo-400" />
-              <span>Campus Security Login</span>
-            </Link>
-          </div>
-
-          {/* Live System Stats Pill Bar */}
-          <div className="pt-8 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs font-mono text-slate-400">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Available Slots: <strong className="text-white">{stats.availableSlots}</strong></span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-              <span>Occupied Slots: <strong className="text-white">{stats.occupiedSlots}</strong></span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-              <span>Active Reports: <strong className="text-white">{stats.activeViolationsCount}</strong></span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
-              <span>Database Sync: <strong className="text-emerald-400">Online</strong></span>
-            </div>
+            {!isAuthenticated && (
+              <Link to="/login?portal=admin" className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm border border-slate-700 transition-all flex items-center justify-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                <span>Campus Security Login</span>
+              </Link>
+            )}
           </div>
         </div>
 
-        {/* Live Slot Interactive Showcase Card */}
+        {/* Live campus snapshot straight from the server */}
         <div className="mt-16 bg-slate-900/90 rounded-3xl border border-slate-800 p-6 sm:p-8 shadow-2xl relative overflow-hidden">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">
-                  Live Smart Grid Snapshot
-                </span>
-                <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full border border-slate-700">
-                  Zone A - Central Entrance
-                </span>
+                <span className={`w-2 h-2 rounded-full ${failed ? 'bg-rose-500' : 'bg-emerald-400 animate-pulse'}`} />
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">{failed ? 'Server unreachable' : 'Live campus snapshot'}</span>
               </div>
-              <h3 className="text-xl font-bold text-white mt-1">
-                Real-Time QR Check-In & Availability
-              </h3>
+              <h3 className="text-xl font-bold text-white mt-1">Availability across the campus right now</h3>
             </div>
-            <Link
-              to="/dashboard"
-              className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
-            >
-              View Full 24-Bay Facility <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+            {data && (
+              <div className="flex items-center gap-6 text-xs font-mono text-slate-400">
+                <Stat label="Free" value={data.availableSlots} tone="text-emerald-400" />
+                <Stat label="Occupied" value={data.occupiedSlots} tone="text-rose-400" />
+                <Stat label="Total bays" value={data.totalSlots} tone="text-white" />
+              </div>
+            )}
           </div>
 
-          {/* Mini Slot Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-6">
-            {previewSlots.map((slot) => {
-              const isAvail = slot.status === 'available';
-              return (
-                <div
-                  key={slot.id}
-                  className={`p-4 rounded-2xl border transition-all ${
-                    isAvail
-                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300 shadow-lg shadow-emerald-950/20'
-                      : 'bg-rose-950/30 border-rose-500/40 text-rose-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-base font-bold text-white">
-                      {slot.code}
-                    </span>
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        isAvail ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
-                      }`}
-                    />
+          {!data ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-6">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-28 rounded-2xl bg-slate-800/60 animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-6">
+              {data.zones.map((z) => {
+                const pct = z.totalSlots ? Math.round(((z.totalSlots - z.availableSlots) / z.totalSlots) * 100) : 0;
+                const full = z.availableSlots === 0;
+                return (
+                  <div key={z.zone} className={`p-4 rounded-2xl border ${full ? 'bg-rose-950/30 border-rose-500/30' : 'bg-emerald-950/20 border-emerald-500/30'}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-white">{z.zone}</span>
+                      <span className={`text-[10px] font-mono ${full ? 'text-rose-300' : 'text-emerald-300'}`}>{full ? 'FULL' : 'OPEN'}</span>
+                    </div>
+                    <p className="mt-2 text-2xl font-extrabold font-mono text-white">
+                      {z.availableSlots}
+                      <span className="text-xs font-normal text-slate-400"> / {z.totalSlots} free</span>
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1 truncate">{z.name}</p>
+                    <div className="h-1.5 rounded-full bg-slate-800 mt-3 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-700 ${pct > 85 ? 'bg-rose-500' : pct > 60 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${pct}%` }} />
+                    </div>
                   </div>
-                  <p className="text-[11px] font-semibold capitalize">
-                    {slot.status}
-                  </p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-1">
-                    {slot.type}
-                  </p>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="py-16 sm:py-24 bg-slate-900/60 border-t border-slate-800/80 px-4 sm:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center max-w-2xl mx-auto mb-14 space-y-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">How it works</span>
+            <h2 className="text-3xl font-extrabold text-white">One platform for drivers and campus security</h2>
+            <p className="text-sm text-slate-400">Software-first and free to use: no payment gates, no fines, no sensors to maintain.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {FEATURES.map((f) => {
+              const Icon = f.icon;
+              return (
+                <div key={f.title} className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-4 hover:border-slate-700 transition-colors">
+                  <div className={`w-12 h-12 rounded-xl border flex items-center justify-center ${TONES[f.tone]}`}>
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">{f.title}</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">{f.text}</p>
                 </div>
               );
             })}
           </div>
-        </div>
-      </section>
 
-      {/* Core Features Grid */}
-      <section className="py-16 sm:py-24 bg-slate-900/60 border-t border-slate-800/80 px-4 sm:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">
-              Designed For Campuses & Modern Facilities
-            </span>
-            <h2 className="text-3xl font-extrabold text-white">
-              End-to-End Parking Operations Platform
-            </h2>
-            <p className="text-sm text-slate-400">
-              A streamlined, software-driven system ensuring optimal space utilization and strict policy enforcement.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Feature 1 */}
-            <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-4 hover:border-slate-700 transition-colors">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center">
-                <QrCode className="w-6 h-6" />
+          <div className="mt-12 grid sm:grid-cols-3 gap-4 text-center">
+            {[
+              { n: '1', t: 'Arrive & scan', d: 'Open Scan & Park and point the camera at the bay placard.', icon: Camera },
+              { n: '2', t: 'Park with a live timer', d: 'The bay locks to your vehicle and your session starts counting.', icon: Clock },
+              { n: '3', t: 'Tap to leave', d: 'End parking from your phone; the bay is released for everyone.', icon: ArrowRight }
+            ].map((s) => (
+              <div key={s.n} className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800">
+                <div className="w-8 h-8 mx-auto rounded-full bg-emerald-500 text-slate-950 text-sm font-extrabold flex items-center justify-center">{s.n}</div>
+                <p className="text-sm font-bold text-white mt-3">{s.t}</p>
+                <p className="text-xs text-slate-400 mt-1">{s.d}</p>
               </div>
-              <h3 className="text-lg font-bold text-white">QR Code Bay Placards</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Each parking bay has a printed QR placard. Drivers scan with their smartphone camera on arrival to check in, automatically marking the slot as Occupied.
-              </p>
-            </div>
-
-            {/* Feature 2 */}
-            <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-4 hover:border-slate-700 transition-colors">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
-                <Clock className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Digital Check-Out</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                When leaving, drivers tap End Parking on their phone. The system records session duration and immediately releases the bay back to Available for other campus drivers.
-              </p>
-            </div>
-
-            {/* Feature 3 */}
-            <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-4 hover:border-slate-700 transition-colors">
-              <div className="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center">
-                <ShieldAlert className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Community Violation Reporting</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Students, faculty, and guards report cars parked without scanning, blocking exits, or straddling bays using photo evidence and license plate tracking.
-              </p>
-            </div>
-
-            {/* Feature 4 */}
-            <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-4 hover:border-slate-700 transition-colors">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center">
-                <MapPin className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Multi-Zone Interactive Map</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Visual campus map highlighting 5 strategic parking zones, live walking distance, driving minutes, and EV fast-charging stations.
-              </p>
-            </div>
-
-            {/* Feature 5 */}
-            <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-4 hover:border-slate-700 transition-colors">
-              <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center">
-                <Layers className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Admin Operations Console</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Campus security dashboard with real-time session monitoring, manual slot overrides, warning notice dispatch, and system transaction history.
-              </p>
-            </div>
-
-            {/* Feature 6 */}
-            <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-4 hover:border-slate-700 transition-colors">
-              <div className="w-12 h-12 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center justify-center">
-                <Server className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Cloud Database Architecture</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Architecture designed with an abstracted service layer (`src/services/api.js`) ready to connect to cloud REST APIs and relational or NoSQL databases.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-12 px-4 sm:px-8 text-xs text-slate-400">
+      <footer className="border-t border-slate-800/80 py-10 px-4 sm:px-8 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="font-bold text-white">ParkPulse</span>
-            <span>– Smart Campus Parking Platform</span>
+            <span>– Cloud-based smart parking &amp; violation reporting</span>
           </div>
-          <div className="flex items-center gap-4 text-slate-400">
-            <Link to="/login?portal=user" className="hover:text-white transition-colors">Driver Login</Link>
-            <Link to="/login?portal=admin" className="hover:text-white transition-colors">Security Login</Link>
-            <Link to="/register" className="hover:text-white transition-colors">Vehicle Registration</Link>
+          <div className="flex items-center gap-5">
+            <Link to="/login" className="hover:text-white transition-colors">Driver login</Link>
+            <Link to="/login?portal=admin" className="hover:text-white transition-colors">Security login</Link>
+            <Link to="/register" className="hover:text-white transition-colors">Register vehicle</Link>
           </div>
         </div>
       </footer>
     </div>
   );
 };
+
+const Stat = ({ label, value, tone }) => (
+  <div className="text-right">
+    <p className={`text-xl font-extrabold ${tone}`}>{value}</p>
+    <p className="text-[10px] uppercase tracking-wider">{label}</p>
+  </div>
+);

@@ -1,114 +1,36 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import {
-  INITIAL_SLOTS,
-  INITIAL_LOCATIONS,
-  INITIAL_VIOLATIONS,
-  INITIAL_ACTIVITY,
-  INITIAL_SYSTEM_LOGS
-} from '../data/mockData';
-import { parkingApi } from '../services/api';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { api, session } from '../services/api';
+import { useAuth } from './AuthContext';
 
 const ParkingContext = createContext(null);
 
+const EMPTY_STATS = {
+  totalSlots: 0,
+  availableSlots: 0,
+  occupiedSlots: 0,
+  reservedSlots: 0,
+  maintenanceSlots: 0,
+  occupancyPercentage: 0,
+  zoneCount: 0,
+  activeSessions: 0,
+  openViolations: 0
+};
+
 export const ParkingProvider = ({ children }) => {
-  // Slots state
-  const [slots, setSlots] = useState(() => {
-    try {
-      const stored = localStorage.getItem('parkpulse_slots');
-      return stored ? JSON.parse(stored) : INITIAL_SLOTS;
-    } catch {
-      return INITIAL_SLOTS;
-    }
-  });
+  const { currentUser } = useAuth();
+  const userId = currentUser?.id;
 
-  // Nearby Locations state
-  const [locations, setLocations] = useState(() => {
-    try {
-      const stored = localStorage.getItem('parkpulse_locations');
-      return stored ? JSON.parse(stored) : INITIAL_LOCATIONS;
-    } catch {
-      return INITIAL_LOCATIONS;
-    }
-  });
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [connection, setConnection] = useState({ status: 'connecting', latencyMs: null, lastSync: null });
+  const revRef = useRef(0);
 
-  // Violations state
-  const [violations, setViolations] = useState(() => {
-    try {
-      const stored = localStorage.getItem('parkpulse_violations');
-      return stored ? JSON.parse(stored) : INITIAL_VIOLATIONS;
-    } catch {
-      return INITIAL_VIOLATIONS;
-    }
-  });
-
-  // Active Session for current user
-  const [activeSession, setActiveSession] = useState(() => {
-    try {
-      const stored = localStorage.getItem('parkpulse_active_session');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  // All Sessions (active & history)
-  const [allSessions, setAllSessions] = useState(() => {
-    try {
-      const stored = localStorage.getItem('parkpulse_all_sessions');
-      return stored
-        ? JSON.parse(stored)
-        : [
-            {
-              sessionId: 'sess_init_1',
-              slotId: 's-004',
-              slotCode: 'P004',
-              vehicleNumber: 'KA-01-MJ-4521',
-              driverName: 'Rohit Sharma',
-              zone: 'Zone A',
-              startTime: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
-              status: 'active'
-            },
-            {
-              sessionId: 'sess_init_2',
-              slotId: 's-005',
-              slotCode: 'P005',
-              vehicleNumber: 'KA-03-EE-9012',
-              driverName: 'Priya Nair',
-              zone: 'Zone A',
-              startTime: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
-              status: 'active'
-            },
-            {
-              sessionId: 'sess_init_3',
-              slotId: 's-008',
-              slotCode: 'P008',
-              vehicleNumber: 'MH-02-BQ-8819',
-              driverName: 'Arjun Das',
-              zone: 'Zone B',
-              startTime: new Date(Date.now() - 65 * 60 * 1000).toISOString(),
-              status: 'active'
-            }
-          ];
-    } catch {
-      return [];
-    }
-  });
-
-  // User Activity timeline
-  const [activityHistory, setActivityHistory] = useState(() => {
-    try {
-      const stored = localStorage.getItem('parkpulse_activity');
-      return stored ? JSON.parse(stored) : INITIAL_ACTIVITY;
-    } catch {
-      return INITIAL_ACTIVITY;
-    }
-  });
-
-  // GPS User Live Location State
+  // GPS (kept for the session only; never persisted)
   const [userLocation, setUserLocation] = useState(() => {
     try {
-      const stored = localStorage.getItem('parkpulse_user_location');
-      return stored ? JSON.parse(stored) : null;
+      const raw = sessionStorage.getItem('parkpulse_gps');
+      return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
     }
@@ -116,487 +38,230 @@ export const ParkingProvider = ({ children }) => {
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
 
-  // System Audit & Transaction logs
-  const [systemLogs, setSystemLogs] = useState(() => {
+  // ---- data sync --------------------------------------------------------
+  const refresh = useCallback(async () => {
+    if (!session.token) return null;
+    const t0 = performance.now();
     try {
-      const stored = localStorage.getItem('parkpulse_system_logs');
-      return stored ? JSON.parse(stored) : INITIAL_SYSTEM_LOGS;
-    } catch {
-      return INITIAL_SYSTEM_LOGS;
-    }
-  });
-
-  // Sync to LocalStorage
-  useEffect(() => {
-    localStorage.setItem('parkpulse_slots', JSON.stringify(slots));
-  }, [slots]);
-
-  // Initial Cloud Sync: If VITE_API_BASE_URL is configured, hydrate initial slots from cloud
-  useEffect(() => {
-    if (import.meta.env.VITE_API_BASE_URL) {
-      parkingApi.getSlots().then((cloudSlots) => {
-        if (cloudSlots && Array.isArray(cloudSlots) && cloudSlots.length > 0) {
-          setSlots(cloudSlots);
-          addSystemLog('Connected to Cloud API. Synchronized real-time bay state.', 'info', 'Cloud-Sync');
-        }
-      }).catch((err) => {
-        console.warn('Initial cloud sync notice:', err.message);
-      });
+      const snap = await api.state();
+      if (snap.rev >= revRef.current) {
+        revRef.current = snap.rev;
+        setData(snap);
+      }
+      setLoadError('');
+      setConnection((c) => ({
+        ...c,
+        status: c.status === 'offline' ? 'reconnecting' : c.status,
+        latencyMs: Math.round(performance.now() - t0),
+        lastSync: Date.now()
+      }));
+      return snap;
+    } catch (err) {
+      if (err.status === 0) setConnection((c) => ({ ...c, status: 'offline' }));
+      else if (err.status !== 401) setLoadError(err.message);
+      return null;
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('parkpulse_locations', JSON.stringify(locations));
-  }, [locations]);
-
-  useEffect(() => {
-    localStorage.setItem('parkpulse_violations', JSON.stringify(violations));
-  }, [violations]);
-
-  useEffect(() => {
-    if (activeSession) {
-      localStorage.setItem('parkpulse_active_session', JSON.stringify(activeSession));
-    } else {
-      localStorage.removeItem('parkpulse_active_session');
-    }
-  }, [activeSession]);
-
-  useEffect(() => {
-    localStorage.setItem('parkpulse_all_sessions', JSON.stringify(allSessions));
-  }, [allSessions]);
-
-  useEffect(() => {
-    localStorage.setItem('parkpulse_activity', JSON.stringify(activityHistory));
-  }, [activityHistory]);
-
-  useEffect(() => {
-    localStorage.setItem('parkpulse_system_logs', JSON.stringify(systemLogs));
-  }, [systemLogs]);
-
-  // Recalculate location slot counts when slots state changes
-  useEffect(() => {
-    setLocations((prevLocations) =>
-      prevLocations.map((loc) => {
-        const matchingSlots = slots.filter((s) => s.zone === loc.zone);
-        if (matchingSlots.length > 0) {
-          const avail = matchingSlots.filter((s) => s.status === 'available').length;
-          return {
-            ...loc,
-            totalSlots: matchingSlots.length,
-            availableSlots: avail
-          };
-        }
-        return loc;
-      })
-    );
-  }, [slots]);
-
-  // Log system transaction helper
-  const addSystemLog = (message, level = 'info', source = 'System') => {
-    const timeStr = new Date().toLocaleTimeString('en-GB');
-    const newLog = {
-      id: 'log-' + Date.now(),
-      time: timeStr,
-      level,
-      message,
-      source
-    };
-    setSystemLogs((prev) => [newLog, ...prev.slice(0, 49)]);
-  };
-
-  /**
-   * Start parking session from QR Scanner or Slot detail
-   */
-  const startParking = async ({ slotCode, vehicleNumber, driverName }) => {
-    const targetSlot = slots.find((s) => s.code.toUpperCase() === slotCode.toUpperCase());
-    if (!targetSlot) {
-      throw new Error(`Slot with QR code "${slotCode}" not found.`);
+    if (!userId) {
+      revRef.current = 0;
+      setData(null);
+      setLoading(false);
+      return undefined;
     }
 
-    if (targetSlot.status !== 'available') {
-      throw new Error(`Slot ${slotCode} is currently ${targetSlot.status}. Please pick an available slot.`);
-    }
+    let closed = false;
+    let source = null;
+    let retryTimer = null;
+    let refreshTimer = null;
 
-    const sessionPayload = {
-      slotId: targetSlot.id,
-      slotCode: targetSlot.code,
-      vehicleNumber: vehicleNumber || 'KA-03-HA-8820',
-      driverName: driverName || 'Alex Mercer',
-      zone: targetSlot.zone
+    setLoading(true);
+    refresh().finally(() => !closed && setLoading(false));
+
+    const scheduleRefresh = () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(refresh, 120);
     };
 
-    const newSession = await parkingApi.startParkingSession(sessionPayload);
-
-    // 1. Update slot status to 'occupied'
-    setSlots((prev) =>
-      prev.map((s) =>
-        s.id === targetSlot.id
-          ? {
-              ...s,
-              status: 'occupied',
-              occupiedBy: {
-                vehicleNumber: newSession.vehicleNumber,
-                driverName: newSession.driverName,
-                startTime: newSession.startTime
-              }
-            }
-          : s
-      )
-    );
-
-    // 2. Set current active session
-    setActiveSession(newSession);
-
-    // 3. Append to allSessions
-    setAllSessions((prev) => [newSession, ...prev]);
-
-    // 4. Add to Activity
-    const act = {
-      id: 'act-' + Date.now(),
-      type: 'session_started',
-      slotCode: targetSlot.code,
-      zone: targetSlot.zone,
-      vehicleNumber: newSession.vehicleNumber,
-      startTime: newSession.startTime,
-      status: 'Active Session'
-    };
-    setActivityHistory((prev) => [act, ...prev]);
-
-    // 5. System Transaction Log
-    addSystemLog(
-      `QR Check-In: Vehicle ${newSession.vehicleNumber} checked into slot ${targetSlot.code} (${targetSlot.zone}).`,
-      'success',
-      'QR-CheckIn'
-    );
-
-    return newSession;
-  };
-
-  /**
-   * End the current parking session or admin ends a specific session
-   */
-  const endParking = async (sessionToEnd = activeSession) => {
-    if (!sessionToEnd) {
-      throw new Error('No active parking session found to terminate.');
-    }
-
-    const completedSession = await parkingApi.endParkingSession(sessionToEnd);
-
-    // 1. Release slot back to available
-    setSlots((prev) =>
-      prev.map((s) =>
-        s.code.toUpperCase() === sessionToEnd.slotCode.toUpperCase()
-          ? { ...s, status: 'available', occupiedBy: null }
-          : s
-      )
-    );
-
-    // 2. Clear active session if it was the user's
-    if (activeSession && activeSession.sessionId === sessionToEnd.sessionId) {
-      setActiveSession(null);
-    }
-
-    // 3. Update allSessions
-    setAllSessions((prev) =>
-      prev.map((s) => (s.sessionId === sessionToEnd.sessionId ? completedSession : s))
-    );
-
-    // 4. Record completed activity
-    const act = {
-      id: 'act-' + Date.now(),
-      type: 'session_completed',
-      slotCode: sessionToEnd.slotCode,
-      zone: sessionToEnd.zone,
-      vehicleNumber: sessionToEnd.vehicleNumber,
-      startTime: sessionToEnd.startTime,
-      endTime: completedSession.endTime,
-      durationMin: completedSession.durationMin,
-      status: 'Checked Out & Vacated'
-    };
-    setActivityHistory((prev) => [act, ...prev]);
-
-    // 5. System Transaction Log
-    addSystemLog(
-      `Bay Released: Slot ${sessionToEnd.slotCode} vacated by ${sessionToEnd.vehicleNumber} (Parked ${completedSession.durationMin} mins).`,
-      'info',
-      'Session-Manager'
-    );
-
-    return completedSession;
-  };
-
-  /**
-   * Submit violation report
-   */
-  const reportViolation = async (violationData) => {
-    const newViolation = await parkingApi.reportViolation(violationData);
-
-    setViolations((prev) => [newViolation, ...prev]);
-
-    const act = {
-      id: 'act-' + Date.now(),
-      type: 'violation_reported',
-      violationId: newViolation.id,
-      category: newViolation.category,
-      slotCode: newViolation.slotId,
-      time: newViolation.timestamp,
-      status: 'Pending Verification'
-    };
-    setActivityHistory((prev) => [act, ...prev]);
-
-    addSystemLog(
-      `New violation report logged [${newViolation.id}] for vehicle ${newViolation.vehicleNumber} (${newViolation.category}).`,
-      'warning',
-      'Citizen-Reporting'
-    );
-
-    return newViolation;
-  };
-
-  /**
-   * Admin: Update violation status (e.g. warning_issued, resolved, dismissed)
-   */
-  const updateViolationStatus = async (violationId, newStatus, adminNotes = '') => {
-    const result = await parkingApi.updateViolationStatus(violationId, newStatus, adminNotes);
-
-    setViolations((prev) =>
-      prev.map((v) =>
-        v.id === violationId
-          ? {
-              ...v,
-              status: newStatus,
-              adminNotes: adminNotes || v.adminNotes,
-              updatedAt: result.updatedAt
-            }
-          : v
-      )
-    );
-
-    addSystemLog(
-      `Violation [${violationId}] status updated to "${newStatus.toUpperCase()}" by Admin.`,
-      'info',
-      'Admin-Console'
-    );
-
-    return result;
-  };
-
-  /**
-   * Admin: Override slot status
-   */
-  const updateSlotStatus = (slotId, newStatus) => {
-    setSlots((prev) =>
-      prev.map((s) => {
-        if (s.id === slotId) {
-          const isNowOccupied = newStatus === 'occupied';
-          return {
-            ...s,
-            status: newStatus,
-            occupiedBy: isNowOccupied
-              ? s.occupiedBy || {
-                  vehicleNumber: 'ADMIN-OVERRIDE',
-                  driverName: 'Staff Vehicle',
-                  startTime: new Date().toISOString()
-                }
-              : null
-          };
-        }
-        return s;
-      })
-    );
-
-    addSystemLog(
-      `Slot ID ${slotId} manually overridden to "${newStatus.toUpperCase()}".`,
-      'warning',
-      'Slot-Manager'
-    );
-  };
-
-  /**
-   * Admin: Add new slot
-   */
-  const addSlot = (newSlotData) => {
-    const newSlot = {
-      id: 's-' + Date.now(),
-      code: newSlotData.code.toUpperCase(),
-      zone: newSlotData.zone,
-      zoneName: newSlotData.zoneName || newSlotData.zone,
-      level: newSlotData.level || 'Ground Floor',
-      type: newSlotData.type || 'Standard',
-      status: 'available',
-      isEV: newSlotData.type === 'EV Charging',
-      isAccessible: newSlotData.type === 'Accessible',
-      qrPlacardId: `QR-${newSlotData.code.toUpperCase()}`,
-      occupiedBy: null
-    };
-
-    setSlots((prev) => [...prev, newSlot]);
-    addSystemLog(`New parking slot ${newSlot.code} commissioned in ${newSlot.zone}.`, 'success', 'Admin-Console');
-    return newSlot;
-  };
-
-  /**
-   * User: Detect live GPS location
-   */
-  const detectUserLocation = () => {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        const msg = 'Geolocation is not supported by your browser';
-        setLocationError(msg);
-        reject(new Error(msg));
-        return;
+    const connect = async () => {
+      if (closed || typeof EventSource === 'undefined') return;
+      try {
+        const { ticket } = await api.eventTicket();
+        if (closed) return;
+        source = new EventSource(api.eventsUrl(ticket));
+        source.addEventListener('hello', () => {
+          setConnection((c) => ({ ...c, status: 'live' }));
+          scheduleRefresh();
+        });
+        source.addEventListener('change', scheduleRefresh);
+        source.onerror = () => {
+          source?.close();
+          if (closed) return;
+          setConnection((c) => ({ ...c, status: c.status === 'offline' ? 'offline' : 'reconnecting' }));
+          retryTimer = setTimeout(connect, 3000);
+        };
+      } catch (err) {
+        if (closed || err.status === 401) return;
+        setConnection((c) => ({ ...c, status: 'reconnecting' }));
+        retryTimer = setTimeout(connect, 5000);
       }
-      setIsDetectingLocation(true);
-      setLocationError('');
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const loc = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: position.timestamp
-          };
-          setUserLocation(loc);
-          localStorage.setItem('parkpulse_user_location', JSON.stringify(loc));
-          setIsDetectingLocation(false);
-          addSystemLog(`GPS location acquired (${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}).`, 'info', 'Geospatial');
-          resolve(loc);
-        },
-        (error) => {
-          setIsDetectingLocation(false);
-          let msg = 'Could not retrieve your GPS location.';
-          if (error.code === 1) msg = 'Location permission was denied. Please allow location in your browser.';
-          if (error.code === 2) msg = 'Position unavailable. Make sure your device GPS is turned on.';
-          if (error.code === 3) msg = 'Location request timed out.';
+    };
+    connect();
+
+    // Safety net: periodic resync, and resync when the tab regains focus / network.
+    const poll = setInterval(refresh, 20000);
+    const onVisible = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', refresh);
+
+    return () => {
+      closed = true;
+      source?.close();
+      clearTimeout(retryTimer);
+      clearTimeout(refreshTimer);
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', refresh);
+    };
+  }, [userId, refresh]);
+
+  // ---- actions (server is authoritative; refresh pulls the resulting state) --
+  const act = useCallback(
+    async (fn) => {
+      const result = await fn();
+      await refresh();
+      return result;
+    },
+    [refresh]
+  );
+
+  const startParking = useCallback(({ slotCode, vehicleNumber }) => act(() => api.startSession({ slotCode, vehicleNumber })), [act]);
+  const endParking = useCallback((sessionId) => act(() => api.endSession(sessionId)), [act]);
+  const reportViolation = useCallback((payload) => act(() => api.reportViolation(payload)), [act]);
+  const updateViolationStatus = useCallback((id, status, note) => act(() => api.updateViolationStatus(id, status, note)), [act]);
+  const updateSlotStatus = useCallback((id, status, vehicleNumber) => act(() => api.patchSlot(id, { status, vehicleNumber })), [act]);
+  const addSlot = useCallback((payload) => act(() => api.createSlot(payload)), [act]);
+  const removeSlot = useCallback((id) => act(() => api.deleteSlot(id)), [act]);
+  const addZone = useCallback((payload) => act(() => api.createZone(payload)), [act]);
+  const updateZone = useCallback((zone, payload) => act(() => api.updateZone(zone, payload)), [act]);
+  const resetData = useCallback((mode) => act(() => api.resetData(mode)), [act]);
+  const markNotificationsRead = useCallback((ids) => act(() => api.markNotificationsRead(ids)), [act]);
+
+  // ---- geolocation ------------------------------------------------------
+  const detectUserLocation = useCallback(
+    () =>
+      new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+          const msg = 'Location services are not supported by this browser.';
           setLocationError(msg);
           reject(new Error(msg));
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-      );
-    });
-  };
+          return;
+        }
+        setIsDetectingLocation(true);
+        setLocationError('');
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: pos.timestamp };
+            setUserLocation(loc);
+            try {
+              sessionStorage.setItem('parkpulse_gps', JSON.stringify(loc));
+            } catch {
+              /* ignore */
+            }
+            setIsDetectingLocation(false);
+            resolve(loc);
+          },
+          (error) => {
+            setIsDetectingLocation(false);
+            const msg =
+              { 1: 'Location permission was denied. Allow location access in your browser to sort by distance.', 2: 'Your position is unavailable. Check that GPS is switched on.', 3: 'Locating you timed out. Please try again.' }[error.code] ||
+              'Could not determine your location.';
+            setLocationError(msg);
+            reject(new Error(msg));
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        );
+      }),
+    []
+  );
 
-  /**
-   * Admin: Allot new parking location and automatically provision bays
-   */
-  const addParkingLocation = (locationData) => {
-    const newLoc = {
-      id: 'loc-' + Date.now(),
-      zone: locationData.zone || `Zone ${String.fromCharCode(65 + locations.length)}`,
-      name: locationData.name,
-      address: locationData.address || 'Vishwakarma University Campus, Kondhwa, Pune',
-      lat: parseFloat(locationData.lat) || 18.4603133,
-      lng: parseFloat(locationData.lng) || 73.8835838,
-      distanceKm: 0.2,
-      walkingTimeMin: 2,
-      driveTimeMin: 1,
-      totalSlots: parseInt(locationData.totalSlots, 10) || 6,
-      availableSlots: parseInt(locationData.totalSlots, 10) || 6,
-      tags: locationData.tags || ['VU Campus', 'QR Enabled'],
-      hasEV: Boolean(locationData.hasEV),
-      isCovered: Boolean(locationData.isCovered),
-      securityLevel: locationData.securityLevel || 'Patrolled Area',
-      coordinates: { x: Math.floor(Math.random() * 50) + 25, y: Math.floor(Math.random() * 50) + 25 },
-      rating: 5.0
-    };
+  // ---- derived values -----------------------------------------------------
+  const slots = useMemo(() => data?.slots ?? [], [data]);
+  const zones = useMemo(() => data?.zones ?? [], [data]);
+  const sessions = useMemo(() => data?.sessions ?? [], [data]);
+  const violations = useMemo(() => data?.violations ?? [], [data]);
+  const notifications = useMemo(() => data?.notifications ?? [], [data]);
+  const notices = useMemo(() => data?.notices ?? [], [data]);
 
-    setLocations((prev) => [...prev, newLoc]);
-
-    // Provision initial bays for this new lot
-    const slotsCount = newLoc.totalSlots;
-    const zoneLetter = newLoc.zone.replace('Zone ', '').trim() || 'X';
-    const newSlots = [];
-    for (let i = 1; i <= slotsCount; i++) {
-      const codeNumber = (slots.length + i).toString().padStart(3, '0');
-      newSlots.push({
-        id: `s-${Date.now()}-${i}`,
-        code: `P${codeNumber}`,
-        zone: newLoc.zone,
-        zoneName: newLoc.name,
-        level: locationData.level || 'Ground Floor',
-        type: i === 1 && newLoc.hasEV ? 'EV Charging' : 'Standard',
-        status: 'available',
-        isEV: i === 1 && newLoc.hasEV,
-        isAccessible: i === 2,
-        qrPlacardId: `QR-${zoneLetter}-${codeNumber}`,
-        occupiedBy: null
+  const activityHistory = useMemo(() => {
+    if (!userId) return [];
+    const items = [];
+    for (const s of sessions) {
+      if (s.userId !== userId) continue;
+      items.push({
+        id: `sess-${s.sessionId}`,
+        type: s.status === 'active' ? 'session_started' : 'session_completed',
+        slotCode: s.slotCode,
+        zone: s.zone,
+        durationMin: s.durationMin,
+        time: s.endTime || s.startTime
       });
     }
+    for (const v of violations) {
+      if (v.reporterId !== userId) continue;
+      items.push({ id: `vio-${v.id}`, type: 'violation_reported', violationId: v.id, category: v.category, status: v.status, time: v.timestamp });
+    }
+    return items.sort((a, b) => new Date(b.time) - new Date(a.time));
+  }, [sessions, violations, userId]);
 
-    setSlots((prev) => [...prev, ...newSlots]);
-    addSystemLog(`Admin alloted new parking hub: "${newLoc.name}" (${newLoc.zone}) with ${slotsCount} slots.`, 'success', 'Admin-Allotment');
-    return newLoc;
-  };
-
-  /**
-   * Reset data back to default mock state
-   */
-  const resetToDefaultData = () => {
-    setSlots(INITIAL_SLOTS);
-    setLocations(INITIAL_LOCATIONS);
-    setViolations(INITIAL_VIOLATIONS);
-    setActiveSession(null);
-    setActivityHistory(INITIAL_ACTIVITY);
-    setSystemLogs(INITIAL_SYSTEM_LOGS);
-    localStorage.removeItem('parkpulse_slots');
-    localStorage.removeItem('parkpulse_locations');
-    localStorage.removeItem('parkpulse_violations');
-    localStorage.removeItem('parkpulse_active_session');
-    localStorage.removeItem('parkpulse_all_sessions');
-    localStorage.removeItem('parkpulse_activity');
-    localStorage.removeItem('parkpulse_system_logs');
-  };
-
-  // Aggregated Real-time Stats
-  const totalSlots = slots.length;
-  const availableSlots = slots.filter((s) => s.status === 'available').length;
-  const occupiedSlots = slots.filter((s) => s.status === 'occupied').length;
-  const reservedSlots = slots.filter((s) => s.status === 'reserved').length;
-  const maintenanceSlots = slots.filter((s) => s.status === 'maintenance').length;
-  const occupancyPercentage = totalSlots > 0 ? Math.round((occupiedSlots / totalSlots) * 100) : 0;
-  const activeViolationsCount = violations.filter(
-    (v) => v.status === 'pending' || v.status === 'investigating'
-  ).length;
-
-  const value = {
-    slots,
-    locations,
-    violations,
-    activeSession,
-    allSessions,
-    activityHistory,
-    systemLogs,
-    stats: {
-      totalSlots,
-      availableSlots,
-      occupiedSlots,
-      reservedSlots,
-      maintenanceSlots,
-      occupancyPercentage,
-      activeViolationsCount
-    },
-    startParking,
-    endParking,
-    reportViolation,
-    updateViolationStatus,
-    updateSlotStatus,
-    addSlot,
-    userLocation,
-    isDetectingLocation,
-    locationError,
-    detectUserLocation,
-    addParkingLocation,
-    resetToDefaultData,
-    addSystemLog
-  };
+  const value = useMemo(
+    () => ({
+      ready: Boolean(data),
+      loading,
+      loadError,
+      connection,
+      slots,
+      zones,
+      locations: zones,
+      sessions,
+      allSessions: sessions,
+      violations,
+      notices,
+      notifications,
+      activeSession: data?.activeSession ?? null,
+      activityHistory,
+      stats: data?.stats ?? EMPTY_STATS,
+      rev: data?.rev ?? 0,
+      refresh,
+      startParking,
+      endParking,
+      reportViolation,
+      updateViolationStatus,
+      updateSlotStatus,
+      addSlot,
+      removeSlot,
+      addZone,
+      updateZone,
+      resetData,
+      markNotificationsRead,
+      userLocation,
+      isDetectingLocation,
+      locationError,
+      detectUserLocation
+    }),
+    [
+      data, loading, loadError, connection, slots, zones, sessions, violations, notices, notifications, activityHistory, refresh,
+      startParking, endParking, reportViolation, updateViolationStatus, updateSlotStatus, addSlot, removeSlot, addZone, updateZone,
+      resetData, markNotificationsRead, userLocation, isDetectingLocation, locationError, detectUserLocation
+    ]
+  );
 
   return <ParkingContext.Provider value={value}>{children}</ParkingContext.Provider>;
 };
 
 export const useParking = () => {
-  const context = useContext(ParkingContext);
-  if (!context) {
-    throw new Error('useParking must be used within a ParkingProvider');
-  }
-  return context;
+  const ctx = useContext(ParkingContext);
+  if (!ctx) throw new Error('useParking must be used within a ParkingProvider');
+  return ctx;
 };

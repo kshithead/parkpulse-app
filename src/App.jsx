@@ -1,84 +1,76 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { ToastProvider } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ParkingProvider } from './context/ParkingContext';
 import { Layout } from './components/common/Layout';
+import { FullPageLoader } from './components/common/Feedback';
+import { pages } from './pages/registry';
 
-// Pages
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
-import { UserDashboard } from './pages/UserDashboard';
-import { QRParkingPage } from './pages/QRParkingPage';
-import { NearbyParkingPage } from './pages/NearbyParkingPage';
-import { ViolationReportPage } from './pages/ViolationReportPage';
-import { AdminDashboard } from './pages/AdminDashboard';
+import { NotFoundPage } from './pages/NotFoundPage';
 
-// Route Guard for Authenticated Users
+const homeFor = (isAdmin) => (isAdmin ? '/admin' : '/dashboard');
+
+// Signed-in users only. Remembers where they were headed (including ?query) so QR deep links survive login.
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, status } = useAuth();
   const location = useLocation();
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
+  if (status === 'loading') return <FullPageLoader label="Restoring your session…" />;
+  if (!isAuthenticated) return <Navigate to="/login" state={{ from: `${location.pathname}${location.search}` }} replace />;
   return children;
 };
 
-// Route Guard for Admin Only
-const AdminRoute = ({ children }) => {
-  const { isAuthenticated, isAdmin } = useAuth();
+// Login / register are for guests; signed-in users go straight to where they were going.
+const GuestRoute = ({ children }) => {
+  const { isAuthenticated, isAdmin, status } = useAuth();
+  const location = useLocation();
+  if (status === 'loading') return <FullPageLoader label="Restoring your session…" />;
+  if (isAuthenticated) return <Navigate to={location.state?.from || homeFor(isAdmin)} replace />;
+  return children;
+};
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login?portal=admin" replace />;
-  }
-  if (!isAdmin) {
-    // If a driver attempts to open admin console, direct them back to driver dashboard
-    return <Navigate to="/dashboard" replace />;
-  }
+const RoleRoute = ({ role, children }) => {
+  const { isAdmin } = useAuth();
+  if (role === 'admin' && !isAdmin) return <Navigate to="/dashboard" replace />;
+  if (role === 'driver' && isAdmin) return <Navigate to="/admin" replace />;
   return children;
 };
 
 export default function App() {
+  const Dashboard = pages.dashboard;
+  const QR = pages.qr;
+  const Nearby = pages.nearby;
+  const Report = pages.report;
+  const Admin = pages.admin;
+  const Placards = pages.placards;
+
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <ParkingProvider>
-          <Routes>
-            {/* Public Landing & Authentication */}
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+      <ToastProvider>
+        <AuthProvider>
+          <ParkingProvider>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+              <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
 
-            {/* App Layout with Navy Sidebar & Header */}
-            <Route
-              element={
-                <ProtectedRoute>
-                  <Layout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/dashboard" element={<UserDashboard />} />
-              <Route path="/qr-parking" element={<QRParkingPage />} />
-              <Route path="/nearby" element={<NearbyParkingPage />} />
-              <Route path="/report-violation" element={<ViolationReportPage />} />
+              <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+                <Route path="/dashboard" element={<RoleRoute role="driver"><Dashboard /></RoleRoute>} />
+                <Route path="/qr-parking" element={<RoleRoute role="driver"><QR /></RoleRoute>} />
+                <Route path="/nearby" element={<Nearby />} />
+                <Route path="/report-violation" element={<Report />} />
+                <Route path="/admin" element={<RoleRoute role="admin"><Admin /></RoleRoute>} />
+                <Route path="/admin/placards" element={<RoleRoute role="admin"><Placards /></RoleRoute>} />
+              </Route>
 
-              {/* Admin Only Route */}
-              <Route
-                path="/admin"
-                element={
-                  <AdminRoute>
-                    <AdminDashboard />
-                  </AdminRoute>
-                }
-              />
-            </Route>
-
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </ParkingProvider>
-      </AuthProvider>
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </ParkingProvider>
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

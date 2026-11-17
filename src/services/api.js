@@ -1,207 +1,106 @@
-// ParkPulse API Service Layer
-// Dual-Mode Architecture:
-// 1. Cloud Mode: If VITE_API_BASE_URL is set or deployed to Cloud (Vercel Production), calls real REST endpoints.
-// 2. Offline / Fallback Mode: Seamlessly falls back to LocalStorage if cloud URL is unset or offline.
+// ParkPulse API client. Talks to the Express backend (same origin in production,
+// proxied by Vite in development). There is no offline/mock fallback: the server is
+// the single source of truth so every connected device sees the same live state.
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
-// In production (Vercel) or when custom API URL is configured, cloud requests are enabled
-const IS_API_ENABLED = Boolean(import.meta.env.VITE_API_BASE_URL) || import.meta.env.PROD;
-const API_DELAY_MS = 150;
+const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const TOKEN_KEY = 'parkpulse_token';
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let token = null;
+try {
+  token = localStorage.getItem(TOKEN_KEY);
+} catch {
+  /* storage unavailable */
+}
 
-export const parkingApi = {
-  /**
-   * Fetch all parking slots across all zones
-   * Cloud: GET /api/v1/slots
-   */
-  async getSlots() {
-    if (IS_API_ENABLED) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/slots`);
-        if (res.ok) return await res.json();
-      } catch (err) {
-        console.warn('[Cloud API] Failed to fetch slots from cloud, falling back to local state:', err.message);
-      }
-    }
-    await sleep(API_DELAY_MS);
-    const stored = localStorage.getItem('parkpulse_slots');
-    return stored ? JSON.parse(stored) : null;
-  },
+let unauthorizedHandler = null;
 
-  /**
-   * Query slot information by QR identifier code (e.g., P001, P002)
-   * Cloud: GET /api/v1/slots/qr/{code}
-   */
-  async getSlotByCode(code, slots) {
-    if (IS_API_ENABLED) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/slots/qr/${encodeURIComponent(code)}`);
-        if (res.ok) return await res.json();
-      } catch (err) {
-        console.warn('[Cloud API] Failed to query QR code from cloud, falling back to local search.');
-      }
-    }
-    await sleep(API_DELAY_MS);
-    if (!code) return null;
-    const cleanCode = code.trim().toUpperCase();
-    return slots.find((s) => s.code.toUpperCase() === cleanCode) || null;
-  },
-
-  /**
-   * Start a live parking session via QR check-in
-   * Cloud: POST /api/v1/sessions/start
-   */
-  async startParkingSession({ slotId, slotCode, vehicleNumber, driverName, zone }) {
-    const payload = {
-      sessionId: 'sess_' + Date.now(),
-      slotId,
-      slotCode,
-      vehicleNumber: vehicleNumber.toUpperCase(),
-      driverName: driverName || 'Registered Driver',
-      zone,
-      startTime: new Date().toISOString(),
-      status: 'active'
-    };
-
-    if (IS_API_ENABLED) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/sessions/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) return await res.json();
-      } catch (err) {
-        console.warn('[Cloud API] Cloud session start unavailable, saving locally.');
-      }
-    }
-
-    await sleep(API_DELAY_MS);
-    return payload;
-  },
-
-  /**
-   * End an active parking session and release slot
-   * Cloud: POST /api/v1/sessions/end
-   */
-  async endParkingSession(session) {
-    const endTime = new Date().toISOString();
-    const durationMs = Math.max(0, new Date(endTime) - new Date(session.startTime));
-    const durationMin = Math.max(1, Math.ceil(durationMs / (1000 * 60)));
-
-    const payload = {
-      ...session,
-      endTime,
-      durationMin,
-      status: 'completed'
-    };
-
-    if (IS_API_ENABLED) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/sessions/end`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) return await res.json();
-      } catch (err) {
-        console.warn('[Cloud API] Cloud session checkout unavailable, updating locally.');
-      }
-    }
-
-    await sleep(API_DELAY_MS);
-    return payload;
-  },
-
-  /**
-   * Submit a new violation report with photo evidence
-   * Cloud: POST /api/v1/violations
-   */
-  async reportViolation(reportData) {
-    const newViolation = {
-      id: `VIO-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      category: reportData.category,
-      vehicleNumber: reportData.vehicleNumber.trim().toUpperCase(),
-      zone: reportData.zone || 'Zone A',
-      slotId: reportData.slotId || 'Unspecified',
-      description: reportData.description,
-      imageUrl: reportData.imageUrl || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80',
-      status: 'pending',
-      urgency: reportData.urgency || 'medium',
-      timestamp: new Date().toISOString(),
-      reporterName: reportData.reporterName || 'Concerned Campus Citizen',
-      reporterId: reportData.reporterId || 'usr-anonymous',
-      adminNotes: 'Awaiting inspection by parking control officer.'
-    };
-
-    if (IS_API_ENABLED) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/violations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newViolation)
-        });
-        if (res.ok) return await res.json();
-      } catch (err) {
-        console.warn('[Cloud API] Cloud violation submission unavailable, saving locally.');
-      }
-    }
-
-    await sleep(API_DELAY_MS);
-    return newViolation;
-  },
-
-  /**
-   * Admin: Update violation status (e.g., warning_issued, resolved, dismissed)
-   * Cloud: PATCH /api/v1/violations/{id}/status
-   */
-  async updateViolationStatus(violationId, newStatus, adminNotes) {
-    const payload = {
-      violationId,
-      status: newStatus,
-      adminNotes,
-      updatedAt: new Date().toISOString()
-    };
-
-    if (IS_API_ENABLED) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/violations/${violationId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) return await res.json();
-      } catch (err) {
-        console.warn('[Cloud API] Cloud violation status update failed, saving locally.');
-      }
-    }
-
-    await sleep(API_DELAY_MS);
-    return payload;
-  },
-
-  /**
-   * Admin: Manual override for parking slot status
-   * Cloud: PATCH /api/v1/slots/{slotId}
-   */
-  async updateSlotStatus(slotId, status, vehicleNumber = null) {
-    const payload = { slotId, status, vehicleNumber, updatedAt: new Date().toISOString() };
-
-    if (IS_API_ENABLED) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/slots/${slotId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) return await res.json();
-      } catch (err) {
-        console.warn('[Cloud API] Cloud slot override failed, updating locally.');
-      }
-    }
-
-    await sleep(API_DELAY_MS);
-    return payload;
+export class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
   }
+}
+
+export const session = {
+  get token() {
+    return token;
+  },
+  set(value) {
+    token = value;
+    try {
+      if (value) localStorage.setItem(TOKEN_KEY, value);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* ignore */
+    }
+  },
+  onUnauthorized(fn) {
+    unauthorizedHandler = fn;
+  }
+};
+
+async function request(method, path, body, { auth = true } = {}) {
+  let res;
+  try {
+    res = await fetch(`${BASE}/api/v1${path}`, {
+      method,
+      headers: {
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(auth && token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    });
+  } catch {
+    throw new ApiError(0, 'Cannot reach the ParkPulse server. Check your connection and try again.');
+  }
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* empty body */
+  }
+
+  if (!res.ok) {
+    if (res.status === 401 && auth && token && unauthorizedHandler) unauthorizedHandler();
+    throw new ApiError(res.status, data?.error || `Request failed (${res.status}).`);
+  }
+  return data;
+}
+
+export const api = {
+  health: () => request('GET', '/health', undefined, { auth: false }),
+  overview: () => request('GET', '/public/overview', undefined, { auth: false }),
+
+  login: (payload) => request('POST', '/auth/login', payload, { auth: false }),
+  register: (payload) => request('POST', '/auth/register', payload, { auth: false }),
+  logout: () => request('POST', '/auth/logout', {}),
+  me: () => request('GET', '/auth/me'),
+  updateMe: (payload) => request('PATCH', '/auth/me', payload),
+
+  state: () => request('GET', '/state'),
+  lookupSlot: (code) => request('GET', `/slots/qr/${encodeURIComponent(code)}`),
+
+  startSession: (payload) => request('POST', '/sessions/start', payload),
+  endSession: (sessionId) => request('POST', '/sessions/end', sessionId ? { sessionId } : {}),
+
+  patchSlot: (id, payload) => request('PATCH', `/slots/${id}`, payload),
+  createSlot: (payload) => request('POST', '/slots', payload),
+  deleteSlot: (id) => request('DELETE', `/slots/${id}`),
+  createZone: (payload) => request('POST', '/zones', payload),
+  updateZone: (zone, payload) => request('PATCH', `/zones/${encodeURIComponent(zone)}`, payload),
+
+  reportViolation: (payload) => request('POST', '/violations', payload),
+  updateViolationStatus: (id, status, note) => request('PATCH', `/violations/${id}/status`, { status, note }),
+  uploadEvidence: (dataUrl) => request('POST', '/uploads', { dataUrl }),
+
+  markNotificationsRead: (ids) => request('POST', '/notifications/read', ids ? { ids } : {}),
+
+  analytics: () => request('GET', '/admin/analytics'),
+  logs: (limit = 150) => request('GET', `/admin/logs?limit=${limit}`),
+  resetData: (mode) => request('POST', '/admin/reset', { mode }),
+
+  eventTicket: () => request('POST', '/events/ticket', {}),
+  eventsUrl: (ticket) => `${BASE}/api/v1/events?ticket=${encodeURIComponent(ticket)}`
 };
