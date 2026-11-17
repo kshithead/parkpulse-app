@@ -1,5 +1,7 @@
 # ParkPulse – Cloud-Based Smart Parking & Violation Reporting
 
+app link : https://parkpulse-app.vercel.app/login
+
 A campus parking platform with **QR check-in/out, live availability, a real-time officer console and community violation reporting**. React + Vite frontend, Node/Express backend with a persistent database, live updates over Server-Sent Events.
 
 No payments, no fines, no IoT sensors – bays are claimed by scanning a QR placard, and enforcement is by warnings and towing.
